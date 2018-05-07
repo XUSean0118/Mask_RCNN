@@ -11,7 +11,7 @@ ROOT_DIR = os.path.abspath("../../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 
 from cityscape import CityscapeConfig, CityscapeDataset
-from models import ResNet101, FlowNet, MaskRCNN, Warp, Decision
+from models import ResNet, FlowNet, MaskRCNN, Warp, Decision
 from mrcnn import utils
 import mrcnn.model as modellib
 
@@ -46,7 +46,7 @@ def main():
     dataset.prepare()
     print("Image Count: {}".format(len(dataset.image_ids)))
     
-    resnet = ResNet101(config=config)
+    resnet = ResNet(config=config)
     flownet = FlowNet(config=config)
     maskrcnn = MaskRCNN(config=config)
     warp = Warp(config=config)
