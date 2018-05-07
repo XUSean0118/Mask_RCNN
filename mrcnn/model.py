@@ -31,7 +31,12 @@ from distutils.version import LooseVersion
 assert LooseVersion(tf.__version__) >= LooseVersion("1.3")
 assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 
-
+"""
+from keras.backend.tensorflow_backend import set_session
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+set_session(tf.Session(config=config))
+"""
 ############################################################
 #  Utility Functions
 ############################################################
@@ -173,8 +178,8 @@ def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
     """
     assert architecture in ["resnet50", "resnet101"]
     # Stage 1
-    x = KL.ZeroPadding2D((3, 3))(input_image)
-    x = KL.Conv2D(64, (7, 7), strides=(2, 2), name='conv1', use_bias=True)(x)
+    #x = KL.ZeroPadding2D((3, 3))(input_image)
+    x = KL.Conv2D(64, (7, 7), strides=(2, 2), padding="same", name='conv1', use_bias=True)(input_image)
     x = BatchNorm(name='bn_conv1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     C1 = x = KL.MaxPooling2D((3, 3), strides=(2, 2), padding="same")(x)
@@ -202,7 +207,146 @@ def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
         C5 = None
     return [C1, C2, C3, C4, C5]
 
+############################################################
+#  Flow Graph
+############################################################
+class ImgPreprocessLayer(KE.Layer):
+    def __init__(self, **kwargs):
+        super(ImgPreprocessLayer, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        img_r, img_g, img_b = tf.split(axis=3, num_or_size_splits=3, value=inputs)
+        image_bgr = tf.concat(axis=3, values=[img_b, img_g, img_r])
+        return image_bgr/255.0
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+def flow_graph(input_image):
+    image = ImgPreprocessLayer(name="preprocessing")(input_image)
+    conv1 = KL.Conv2D(24, (7, 7), strides=(2, 2), padding="same", name='FlowNets_conv1')(image)
+    conv1 = KL.LeakyReLU(alpha=0.1)(conv1)
+    conv2 = KL.Conv2D(48, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv2')(conv1)
+    conv2 = KL.LeakyReLU(alpha=0.1)(conv2)
+    conv3 = KL.Conv2D(96, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv3')(conv2)
+    conv3 = KL.LeakyReLU(alpha=0.1)(conv3)
+    conv3_1 = KL.Conv2D(96, (3, 3), padding="same", name='FlowNets_conv3_1')(conv3)
+    conv3_1 = KL.LeakyReLU(alpha=0.1)(conv3_1)
+    conv4 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv4')(conv3_1)
+    conv4 = KL.LeakyReLU(alpha=0.1)(conv4)
+    conv4_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv4_1')(conv4)
+    conv4_1 = KL.LeakyReLU(alpha=0.1)(conv4_1)
+    conv5 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv5')(conv4_1)
+    conv5 = KL.LeakyReLU(alpha=0.1)(conv5)
+    conv5_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv5_1')(conv5)
+    conv5_1 = KL.LeakyReLU(alpha=0.1)(conv5_1)
+    conv6 = KL.Conv2D(384, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv6')(conv5_1)
+    conv6 = KL.LeakyReLU(alpha=0.1)(conv6)
+    conv6_1 = KL.Conv2D(384, (3, 3), padding="same", name='FlowNets_conv6_1')(conv6)
+    conv6_1 = KL.LeakyReLU(alpha=0.1)(conv6_1)
+    
+    """ START: Refinement Network """
+    predict_flow6 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow6')(conv6_1)
+    deconv5 = KL.Conv2DTranspose(192, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv5')(conv6_1)
+    deconv5 = KL.LeakyReLU(alpha=0.1)(deconv5)
+    upsample_flow6to5 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow6to5')(predict_flow6)
+    concat5 = KL.Concatenate(axis=3)([conv5_1, deconv5, upsample_flow6to5])
+    predict_flow5 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow5')(concat5)
+    deconv4 = KL.Conv2DTranspose(96, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv4')(concat5)
+    deconv4 = KL.LeakyReLU(alpha=0.1)(deconv4)
+    upsample_flow5to4 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow5to4')(predict_flow5)
+    concat4 = KL.Concatenate(axis=3)([conv4_1, deconv4, upsample_flow5to4])
+    predict_flow4 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow4')(concat4)
+    deconv3 = KL.Conv2DTranspose(48, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv3')(concat4)
+    deconv3 = KL.LeakyReLU(alpha=0.1)(deconv3)
+    upsample_flow4to3 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow4to3')(predict_flow4)
+    concat3 = KL.Concatenate(axis=3)([conv3_1, deconv3, upsample_flow4to3])
+    predict_flow3 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow3')(concat3)
+    deconv2 = KL.Conv2DTranspose(24, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv2')(concat3)
+    deconv2 = KL.LeakyReLU(alpha=0.1)(deconv2)
+    upsample_flow3to2 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow3to2')(predict_flow3)
+    concat2 = KL.Concatenate(axis=3)([conv2, deconv2, upsample_flow3to2])
+    predict_flow2 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow2')(concat2)
 
+    """ Scale field """
+    #scale = KL.Conv2D(256, (3, 3), (1, 1), padding="same", kernel_initializer='zeros', bias_initializer='ones', name='FlowNets/predict_scale')(concat2)
+    
+    flow = predict_flow2
+    feature = conv6_1
+    
+    return [flow, feature]
+
+
+############################################################
+# Warping function
+############################################################
+def get_index(b,h,w,num):
+    index_list = []
+    for k in range(b):
+        for i in range(h):
+            for j in range(w):
+                for index in range(num):
+                    index_list.append([index])
+    return np.array(index_list, dtype=np.float32).reshape((b,h,w,num))
+
+def get_hindex(b,h,w,num):
+    index_list = []
+    for k in range(b):
+        for i in range(h):
+            for j in range(w):
+                for index in range(num):
+                    index_list.append([i])
+    return np.array(index_list, dtype=np.float32).reshape((b,h,w,num))
+
+def get_windex(b,h,w,num):
+    index_list = []
+    for k in range(b):
+        for i in range(h):
+            for j in range(w):
+                for index in range(num):
+                    index_list.append([j])
+    return np.array(index_list, dtype=np.float32).reshape((b,h,w,num))
+
+class WarpingLayer(KE.Layer):
+    def __init__(self, backbone_shape, stride, depth=256, config=None, **kwargs):
+        super(WarpingLayer, self).__init__(**kwargs)
+        self.batch = config.IMAGES_PER_GPU
+        self.height = backbone_shape[0]
+        self.width = backbone_shape[1]
+        self.depth = depth
+        self.scale = 20.0/stride
+        
+    def call(self, inputs):
+        key_feature, flow = inputs
+        batch_size = self.batch
+        height = self.height
+        width = self.width
+        key_feature = tf.image.resize_bilinear(key_feature, [height, width])
+        flow = tf.image.resize_bilinear(flow, [height, width])*self.scale
+        h_a = tf.Variable(get_index(batch_size,height,width,height))
+        h_p = tf.Variable(get_hindex(batch_size,height,width,height))
+        w_a = tf.Variable(get_index(batch_size,height,width,width))
+        w_p = tf.Variable(get_windex(batch_size,height,width,width))
+
+        flow_x = tf.reshape(flow[:,:,:,0],[batch_size,height,width,1])
+        flow_y = tf.reshape(flow[:,:,:,1],[batch_size,height,width,1])
+
+        h_b = tf.maximum(tf.minimum(h_p + flow_y, height-1.0), 0.0)
+        w_b = tf.maximum(tf.minimum(w_p + flow_x, width-1.0), 0.0)
+
+        h_kernal = tf.expand_dims(tf.maximum(1.0-tf.abs(h_a-h_b), 0.0), axis=4)
+        w_kernal = tf.expand_dims(tf.maximum(1.0-tf.abs(w_a-w_b), 0.0), axis=3)
+
+        g_kernal = tf.reshape(tf.matmul(h_kernal,w_kernal),[self.batch, height*width, height*width])
+        key_kernal = tf.reshape(key_feature,[batch_size, height*width, -1])
+
+        warp_mat = tf.matmul(g_kernal,key_kernal)
+        warp_pred = tf.reshape(warp_mat,[batch_size, height, width, self.depth])
+        return warp_pred
+
+    def compute_output_shape(self, input_shape):
+        return (None, self.height, self.width, self.depth)
+    
 ############################################################
 #  Proposal Layer
 ############################################################
@@ -1082,6 +1226,9 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits,
         classes that are in the dataset of the image, and 0
         for classes that are not in the dataset.
     """
+    #During model building, Keras calls this function with
+    # target_class_ids of type float32. Unclear why. Cast it
+    # to int to get around it.
     target_class_ids = tf.cast(target_class_ids, 'int64')
 
     # Find predictions of classes that are not in the dataset.
@@ -1132,6 +1279,7 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
                     smooth_l1_loss(y_true=target_bbox, y_pred=pred_bbox),
                     tf.constant(0.0))
     loss = K.mean(loss)
+    loss = K.reshape(loss, [1, 1])
     return loss
 
 
@@ -1171,6 +1319,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
                     K.binary_crossentropy(target=y_true, output=y_pred),
                     tf.constant(0.0))
     loss = K.mean(loss)
+    loss = K.reshape(loss, [1, 1])
     return loss
 
 
@@ -1204,6 +1353,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     """
     # Load image and mask
     image = dataset.load_image(image_id)
+    if not config.Flow:
+        image = image[:,:,:3]
     mask, class_ids = dataset.load_mask(image_id)
     original_shape = image.shape
     image, window, scale, padding, crop = utils.resize_image(
@@ -1725,7 +1876,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_masks = np.zeros(
-                    (batch_size, gt_masks.shape[1], gt_masks.shape[1],
+                    (batch_size, gt_masks.shape[0], gt_masks.shape[1],
                      config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
@@ -1835,8 +1986,10 @@ class MaskRCNN():
                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
 
         # Inputs
-        input_image = KL.Input(
-            shape=[None, None, 3], name="input_image")
+        if config.Flow:
+            input_image = KL.Input(shape=[None, None, 6], name="input_image")
+        else:
+            input_image = KL.Input(shape=[None, None, 3], name="input_image")
         input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE],
                                     name="input_image_meta")
         if mode == "training":
@@ -1868,6 +2021,7 @@ class MaskRCNN():
                 input_gt_masks = KL.Input(
                     shape=[config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1], None],
                     name="input_gt_masks", dtype=bool)
+
         elif mode == "inference":
             # Anchors in normalized coordinates
             input_anchors = KL.Input(shape=[None, 4], name="input_anchors")
@@ -1876,8 +2030,23 @@ class MaskRCNN():
         # Bottom-up Layers
         # Returns a list of the last layers of each stage, 5 in total.
         # Don't create the thead (stage 5), so we pick the 4th item in the list.
-        _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
+        if config.Flow:
+            key_image = KL.Lambda(lambda x: x[:,:,:,3:])(input_image)
+            _, C2, C3, C4, C5 = resnet_graph(key_image, config.BACKBONE,
                                          stage5=True, train_bn=config.TRAIN_BN)
+        else:
+            _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
+                                         stage5=True, train_bn=config.TRAIN_BN)
+        """
+        if config.Flow:
+            backbone_shapes = compute_backbone_shapes(config, config.IMAGE_SHAPE)
+            flow, flow_feature = flow_graph(input_image)
+            C5 = WarpingLayer(backbone_shapes[3], config.BACKBONE_STRIDES[3], depth = 2048, config=config, name="flow_c5")([C5, flow])
+            C4 = WarpingLayer(backbone_shapes[2], config.BACKBONE_STRIDES[2], depth = 1024, config=config, name="flow_c4")([C4, flow])
+            C3 = WarpingLayer(backbone_shapes[1], config.BACKBONE_STRIDES[1], depth = 512 , config=config, name="flow_c3")([C3, flow])
+            C2 = WarpingLayer(backbone_shapes[1], config.BACKBONE_STRIDES[1], depth = 256 , config=config, name="flow_c2")([C2, flow])
+            C2 = KL.Lambda(lambda x: tf.image.resize_bilinear(x,backbone_shapes[0]), name="FlowNets_p2upsampled")(C2)
+        """
         # Top-down Layers
         # TODO: add assert to varify feature map sizes match what's in config
         P5 = KL.Conv2D(256, (1, 1), name='fpn_c5p5')(C5)
@@ -1897,7 +2066,17 @@ class MaskRCNN():
         P5 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p5")(P5)
         # P6 is used for the 5th anchor scale in RPN. Generated by
         # subsampling from P5 with stride of 2.
-        P6 = KL.MaxPooling2D(pool_size=(1, 1), strides=2, name="fpn_p6")(P5)
+        P6 = KL.MaxPooling2D(pool_size=(2, 2), strides=2, name="fpn_p6")(P5)
+
+        if config.Flow:
+            backbone_shapes = compute_backbone_shapes(config, config.IMAGE_SHAPE)
+            flow, flow_feature = flow_graph(input_image)
+            P6 = WarpingLayer(backbone_shapes[4], config.BACKBONE_STRIDES[4], config=config, name="flow_p6")([P6, flow])
+            P5 = WarpingLayer(backbone_shapes[3], config.BACKBONE_STRIDES[3], config=config, name="flow_p5")([P5, flow])
+            P4 = WarpingLayer(backbone_shapes[2], config.BACKBONE_STRIDES[2], config=config, name="flow_p4")([P4, flow])
+            P3 = WarpingLayer(backbone_shapes[1], config.BACKBONE_STRIDES[1], config=config, name="flow_p3")([P3, flow])
+            P2 = WarpingLayer(backbone_shapes[1], config.BACKBONE_STRIDES[1], config=config, name="flow_p2")([P2, flow])
+            P2 = KL.Lambda(lambda x: tf.image.resize_bilinear(x,backbone_shapes[0]), name="FlowNets_p2upsampled")(P2)
 
         # Note that P6 is used in RPN, but not in the classifier heads.
         rpn_feature_maps = [P2, P3, P4, P5, P6]
@@ -1910,7 +2089,7 @@ class MaskRCNN():
             # TODO: can this be optimized to avoid duplicating the anchors?
             anchors = np.broadcast_to(anchors, (config.BATCH_SIZE,) + anchors.shape)
             # A hack to get around Keras's bad support for constants
-            anchors = KL.Lambda(lambda x: tf.constant(anchors), name="anchors")(input_image)
+            anchors = KL.Lambda(lambda x: tf.Variable(anchors), name="anchors")(input_image)
         else:
             anchors = input_anchors
 
@@ -1931,7 +2110,7 @@ class MaskRCNN():
                    for o, n in zip(outputs, output_names)]
 
         rpn_class_logits, rpn_class, rpn_bbox = outputs
-
+        
         # Generate proposals
         # Proposals are [batch, N, (y1, x1, y2, x2)] in normalized coordinates
         # and zero padded.
@@ -1942,7 +2121,7 @@ class MaskRCNN():
             nms_threshold=config.RPN_NMS_THRESHOLD,
             name="ROI",
             config=config)([rpn_class, rpn_bbox, anchors])
-
+        
         if mode == "training":
             # Class ID mask to mark class IDs supported by the dataset the image
             # came from.
@@ -1995,7 +2174,6 @@ class MaskRCNN():
                 [target_bbox, target_class_ids, mrcnn_bbox])
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
-
             # Model
             inputs = [input_image, input_image_meta,
                       input_rpn_match, input_rpn_bbox, input_gt_class_ids, input_gt_boxes, input_gt_masks]
@@ -2005,6 +2183,7 @@ class MaskRCNN():
                        mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
                        rpn_rois, output_rois,
                        rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
+
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
             # Network Heads
@@ -2092,7 +2271,7 @@ class MaskRCNN():
         # Exclude some layers
         if exclude:
             layers = filter(lambda l: l.name not in exclude, layers)
-
+            
         if by_name:
             topology.load_weights_from_hdf5_group_by_name(f, layers)
         else:
@@ -2102,7 +2281,38 @@ class MaskRCNN():
 
         # Update the log directory
         self.set_log_dir(filepath)
+        
+    def loadflow_weights(self, filepath, by_name=False):
+        """Modified version of the correspoding Keras function with
+        the addition of multi-GPU support and the ability to exclude
+        some layers from loading.
+        exlude: list of layer names to excluce
+        """
+        import h5py
+        from keras.engine import topology
 
+        if h5py is None:
+            raise ImportError('`load_weights` requires h5py.')
+        f = h5py.File(filepath, mode='r')
+
+        if 'layer_names' not in f.attrs and 'model_weights' in f:
+            f = f['model_weights']
+
+        # In multi-GPU training, we wrap the model. Get layers
+        # of the inner model because they have the weights.
+        keras_model = self.keras_model
+        layers = keras_model.inner_model.layers if hasattr(keras_model, "inner_model")\
+            else keras_model.layers
+
+        layers = filter(lambda l: "FlowNets" in l.name, layers)
+  
+        if by_name:
+            topology.load_weights_from_hdf5_group_by_name(f, layers)
+        else:
+            topology.load_weights_from_hdf5_group(f, layers)
+        if hasattr(f, 'close'):
+            f.close()
+            
     def get_imagenet_weights(self):
         """Downloads ImageNet trained weights from Keras.
         Returns path to weights file.
@@ -2122,8 +2332,10 @@ class MaskRCNN():
         metrics. Then calls the Keras compile() function.
         """
         # Optimizer object
-        optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum,
-                                         clipnorm=self.config.GRADIENT_CLIP_NORM)
+        if self.config.Flow:
+            optimizer = keras.optimizers.Adam(lr=learning_rate, clipnorm=self.config.GRADIENT_CLIP_NORM)
+        else:
+            optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=self.config.GRADIENT_CLIP_NORM)
         # Add Losses
         # First, clear previously set losses to avoid duplication
         self.keras_model._losses = []
@@ -2271,6 +2483,9 @@ class MaskRCNN():
             "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # All layers
             "all": ".*",
+            # fine tune flow
+            "flownet": r"(FlowNets\_.*)|(mrcnn\_.*)|(rpn\_.*)",
+            "finetune": r"(FlowNets\_.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)"
         }
         if layers in layer_regex.keys():
             layers = layer_regex[layers]
@@ -2302,15 +2517,15 @@ class MaskRCNN():
         if os.name is 'nt':
             workers = 0
         else:
-            workers = multiprocessing.cpu_count()
-
+            #workers = multiprocessing.cpu_count()
+            workers = max(self.config.BATCH_SIZE // 2, 2)
         self.keras_model.fit_generator(
             train_generator,
             initial_epoch=self.epoch,
             epochs=epochs,
             steps_per_epoch=self.config.STEPS_PER_EPOCH,
             callbacks=callbacks,
-            validation_data=val_generator,
+            validation_data=next(val_generator),
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=workers,
@@ -2418,7 +2633,7 @@ class MaskRCNN():
             full_mask = utils.unmold_mask(masks[i], boxes[i], original_image_shape)
             full_masks.append(full_mask)
         full_masks = np.stack(full_masks, axis=-1)\
-            if full_masks else np.empty((0,) + masks.shape[1:3])
+            if full_masks else np.empty(masks.shape[1:3] + (0,))
 
         return boxes, class_ids, scores, full_masks
 
@@ -2462,6 +2677,7 @@ class MaskRCNN():
             log("molded_images", molded_images)
             log("image_metas", image_metas)
             log("anchors", anchors)
+
         # Run object detection
         detections, _, _, mrcnn_mask, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
@@ -2519,9 +2735,11 @@ class MaskRCNN():
             log("molded_images", molded_images)
             log("image_metas", image_metas)
             log("anchors", anchors)
+
         # Run object detection
         detections, _, _, mrcnn_mask, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
+
         # Process detections
         results = []
         for i, image in enumerate(molded_images):
@@ -2743,12 +2961,18 @@ def mold_image(images, config):
     the mean pixel and converts it to float. Expects image
     colors in RGB order.
     """
-    return images.astype(np.float32) - config.MEAN_PIXEL
+    if config.Flow:
+        return images.astype(np.float32) - np.tile(config.MEAN_PIXEL, 2)
+    else:
+        return images.astype(np.float32) - config.MEAN_PIXEL
 
 
 def unmold_image(normalized_images, config):
     """Takes a image normalized with mold() and returns the original."""
-    return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
+    if config.Flow:
+        return (normalized_images + np.tile(config.MEAN_PIXEL, 2)).astype(np.uint8)
+    else:
+        return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
 
 
 ############################################################
