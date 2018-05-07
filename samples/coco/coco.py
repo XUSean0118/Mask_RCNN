@@ -14,8 +14,8 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
     # Train a new model starting from pre-trained COCO weights
     python3 coco.py train --dataset=/path/to/coco/ --model=coco
 
-    # Train a new model starting from ImageNet weights
-    python3 coco.py train --dataset=/path/to/coco/ --model=imagenet
+    # Train a new model starting from ImageNet weights. Also auto download COCO dataset
+    python3 coco.py train --dataset=/path/to/coco/ --model=imagenet --download=True
 
     # Continue training a model that you had trained earlier
     python3 coco.py train --dataset=/path/to/coco/ --model=/path/to/weights.h5
@@ -39,9 +39,6 @@ import imgaug  # https://github.com/aleju/imgaug (pip3 install imageaug)
 # I submitted a pull request https://github.com/cocodataset/cocoapi/pull/50
 # If the PR is merged then use the original repo.
 # Note: Edit PythonAPI/Makefile and replace "python" with "python3".
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
-from pycocotools import mask as maskUtils
 
 import zipfile
 import urllib.request
@@ -52,6 +49,10 @@ ROOT_DIR = os.path.abspath("../../")
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+from pycocotools import mask as maskUtils
+
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 
@@ -81,10 +82,14 @@ class CocoConfig(Config):
     IMAGES_PER_GPU = 2
 
     # Uncomment to train on 8 GPUs (default is 1)
-    # GPU_COUNT = 8
-
+    GPU_COUNT = 3
+    
     # Number of classes (including background)
     NUM_CLASSES = 1 + 80  # COCO has 80 classes
+    
+    BACKBONE = "resnet50"
+    
+    TRAIN_BN = None
 
 
 ############################################################
