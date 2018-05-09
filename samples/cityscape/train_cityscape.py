@@ -22,6 +22,10 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="Train cityscape")
     parser.add_argument("--flow", action="store_true",
                         help="Use flow or not.")
+    parser.add_argument("--num_gpus", type=int, default=1,
+                        help="number of gpus.")
+    parser.add_argument("--num_images", type=int, default=2,
+                        help="number of images per gpu.")
     return parser.parse_args()
 
 def main():
@@ -29,8 +33,9 @@ def main():
     print(args)
     
     config = CityscapeConfig()
-    config.GPU_COUNT = 1
-	confir.IMAGES_PER_GPU = 2
+    config.GPU_COUNT = args.num_gpus
+    config.IMAGES_PER_GPU = args.num_images
+    config.BATCH_SIZE = args.num_images * args.num_gpus
 	if args.flow:
         config.IMAGE_SHAPE = [1024, 1024, 6]
         config.Flow =True

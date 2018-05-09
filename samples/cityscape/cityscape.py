@@ -41,13 +41,13 @@ class CityscapeConfig(Config):
     USE_MINI_MASK = True
     MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
     
-    #Flow = True
+    Flow = None
     
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as maskUtils
 class CityscapeDataset(utils.Dataset):
-    def load_cityscape(self, data_dir, subset, offset=10, class_ids=None):
+    def load_cityscape(self, data_dir, subset, offset=10, fix=False, class_ids=None):
         """Load a subset of the cityscapes dataset.
            dataset_dir: The root directory of the cityscapes dataset.
            subset: What to load (train, val)
@@ -78,8 +78,8 @@ class CityscapeDataset(utils.Dataset):
         for i in image_ids:
             filename = cityscape.imgs[i]['file_name'].split('_')[0] + '/' + cityscape.imgs[i]['file_name']
             index = int(filename[-22:-16])
-            for j in range(index-offset+1,index+1):
-                imagename = filename[:-22]+str(j).zfill(6)+filename[-16:]
+            if fix:
+                imagename = filename[:-22]+str(index-offset+1).zfill(6)+filename[-16:]
                 self.add_image(
                     "cityscape", image_id=i,
                     path=[os.path.join(image_dir, filename),os.path.join(image_dir, imagename)],
@@ -87,6 +87,16 @@ class CityscapeDataset(utils.Dataset):
                     height=cityscape.imgs[i]["height"],
                     annotations=cityscape.loadAnns(cityscape.getAnnIds(
                         imgIds=[i], catIds=class_ids, iscrowd=None)))
+            else:
+                for j in range(index-offset+1,index+1):
+                    imagename = filename[:-22]+str(j).zfill(6)+filename[-16:]
+                    self.add_image(
+                        "cityscape", image_id=i,
+                        path=[os.path.join(image_dir, filename),os.path.join(image_dir, imagename)],
+                        width=cityscape.imgs[i]["width"],
+                        height=cityscape.imgs[i]["height"],
+                        annotations=cityscape.loadAnns(cityscape.getAnnIds(
+                            imgIds=[i], catIds=class_ids, iscrowd=None)))
         
     def image_reference(self, image_id):
         """Return the cityscapes information of the image."""

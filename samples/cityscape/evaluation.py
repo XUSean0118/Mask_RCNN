@@ -24,6 +24,8 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="Evaluation")
     parser.add_argument("--num_frames", type=int, default=20,
                         help="Snippets length.")
+    parser.add_argument("--fix", action="store_true",
+                        help="Fix key frame.")
     parser.add_argument("--target", type=float, default=85,
                         help="confidence score threshold.")
     return parser.parse_args()
@@ -36,13 +38,13 @@ def main():
     data_dir = '/data/cityscapes_dataset/cityscape'
     config = CityscapeConfig()
     config.IMAGE_SHAPE = [1024, 1024, 6]
-    config.Flow =True
     config.POST_NMS_ROIS_INFERENCE = 500
+    config.Flow = True
     #config.display()
 
     # Validation dataset
     dataset = CityscapeDataset()
-    dataset.load_cityscape(data_dir, "val", args.num_frames)
+    dataset.load_cityscape(data_dir, "val", args.num_frames, args.fix)
     dataset.prepare()
     print("Image Count: {}".format(len(dataset.image_ids)))
     
@@ -72,22 +74,31 @@ def main():
         current = np.expand_dims(image[:,:,3:], 0)
         image_metas = np.expand_dims(image_meta, 0)
 
-        if image_id % args.num_frames != 0:
-            images = np.concatenate([current, key], 3)
+        if args.fix:
+            images = np.expand_dims(image, 0)
             flow, flow_feature = flownet.keras_model.predict(images)
-            score = decision.keras_model.predict(flow_feature)
-
-        if score < args.target or image_id % args.num_frames == 0:
-            seg_step += 1
-            key_P2, key_P3, key_P4, key_P5, key_P6 = resnet.keras_model.predict(current)
-            key = current
-            P2, P3, P4, P5, P6 = key_P2, key_P3, key_P4, key_P5, key_P6
+            if args.num_frames == 1:
+                P2, P3, P4, P5, P6 = resnet.keras_model.predict(current)
+            else:
+                key_P2, key_P3, key_P4, key_P5, key_P6 = resnet.keras_model.predict(current)
+                P2, P3, P4, P5, P6 = warp.predict([key_P2, key_P3, key_P4, key_P5, key_P6, flow])
         else:
-            flow_step += 1
-            P2, P3, P4, P5, P6 = warp.predict([key_P2, key_P3, key_P4, key_P5, key_P6, flow])
+            if image_id % args.num_frames != 0:
+                images = np.concatenate([current, key], 3)
+                flow, flow_feature = flownet.keras_model.predict(images)
+                score = decision.keras_model.predict(flow_feature)
+
+            if score < args.target or image_id % args.num_frames == 0:
+                seg_step += 1
+                key_P2, key_P3, key_P4, key_P5, key_P6 = resnet.keras_model.predict(current)
+                key = current
+                P2, P3, P4, P5, P6 = key_P2, key_P3, key_P4, key_P5, key_P6
+            else:
+                flow_step += 1
+                P2, P3, P4, P5, P6 = warp.predict([key_P2, key_P3, key_P4, key_P5, key_P6, flow])
 
         # Compute AP
-        if (image_id+1) % args.num_frames == 0:
+        if (image_id+1) % args.num_frames == 0 or args.fix:
             inputs=[image_metas, P2, P3, P4, P5, P6]
             result = maskrcnn.detect_molded(inputs)
 
@@ -102,7 +113,7 @@ def main():
                            result["rois"], result["class_ids"], result["scores"], result['masks'], verbose=0)
             APs.append(AP)
             print("step: {:3d}, AP50: {:.3f}, mAP: {:.3f}".format(image_id, np.mean(AP50s), np.mean(APs)))
-        
+
     print("step: {:3d}, AP50: {:.3f}, mAP: {:.3f}".format(image_id, np.mean(AP50s), np.mean(APs)))
     print("segmentation steps:", seg_step-492, "flow steps:", flow_step)
 
