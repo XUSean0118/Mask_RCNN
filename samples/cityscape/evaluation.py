@@ -22,6 +22,12 @@ def get_arguments():
       A list of parsed arguments.
     """
     parser = argparse.ArgumentParser(description="Evaluation")
+    parser.add_argument("--flowmodel", type=str, default='flownets',
+                        choices=['flownets', 'flownetS'],
+                        help="chose flow model")
+    parser.add_argument("--resnetmodel", type=str, default='resnet50',
+                        choices=['resnet50', 'resnet101'],
+                        help="chose resnet model")
     parser.add_argument("--num_frames", type=int, default=20,
                         help="Snippets length.")
     parser.add_argument("--fix", action="store_true",
@@ -37,9 +43,10 @@ def main():
     
     data_dir = '/data/cityscapes_dataset/cityscape'
     config = CityscapeConfig()
+    config.FLOW = args.flowmodel
+    config.BACKBONE = args.resnetmodel
     config.IMAGE_SHAPE = [1024, 1024, 6]
     config.POST_NMS_ROIS_INFERENCE = 500
-    config.Flow = True
     #config.display()
 
     # Validation dataset

@@ -41,7 +41,8 @@ class CityscapeConfig(Config):
     USE_MINI_MASK = True
     MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
     
-    Flow = None
+    FLOW = None
+    BACKBONE = "resnet50"
     
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval

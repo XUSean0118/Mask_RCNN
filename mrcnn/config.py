@@ -181,7 +181,7 @@ class Config(object):
     GRADIENT_CLIP_NORM = 5.0
 
     # Use flownet
-    Flow = None
+    FLOW = None
     
     def __init__(self):
         """Set values of computed attributes."""

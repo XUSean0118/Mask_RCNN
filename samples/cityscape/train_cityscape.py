@@ -20,6 +20,12 @@ def get_arguments():
       A list of parsed arguments.
     """
     parser = argparse.ArgumentParser(description="Train cityscape")
+    parser.add_argument("--flowmodel", type=str, default='flownets',
+                        choices=['flownets', 'flownetS'],
+                        help="chose flow model")
+    parser.add_argument("--resnetmodel", type=str, default='resnet50',
+                        choices=['resnet50', 'resnet101'],
+                        help="chose resnet model")
     parser.add_argument("--flow", action="store_true",
                         help="Use flow or not.")
     parser.add_argument("--num_gpus", type=int, default=1,
@@ -35,19 +41,26 @@ def main():
     config = CityscapeConfig()
     config.GPU_COUNT = args.num_gpus
     config.IMAGES_PER_GPU = args.num_images
-    config.BATCH_SIZE = args.num_images * args.num_gpus
-	if args.flow:
+    config.BATCH_SIZE = args.num_images * args.num_gpus     
+    config.BACKBONE = args.resnetmodel
+    if args.flow:
         config.IMAGE_SHAPE = [1024, 1024, 6]
-        config.Flow =True
+        config.FLOW = args.flowmodel
 
     data_dir = '/data/cityscapes_dataset/cityscape'
     # Training dataset
     dataset_train = CityscapeDataset()
-    dataset_train.load_cityscape(data_dir, "train")
+    if args.flow:
+        dataset_train.load_cityscape(data_dir, "train", 11)
+    else:
+        dataset_train.load_cityscape(data_dir, "train", 1)
     dataset_train.prepare()
     # Validation dataset
     dataset_val = CityscapeDataset()
-    dataset_val.load_cityscape(data_dir, "val")
+    if args.flow:
+        dataset_val.load_cityscape(data_dir, "val", 11)
+    else:
+        dataset_val.load_cityscape(data_dir, "val", 1)
     dataset_val.prepare()
 
     # Directory to save logs and trained model

@@ -294,7 +294,7 @@ class FlowNet(Models):
         # Inputs
         input_image = KL.Input(shape=[None, None, 6], name="input_image")
         
-        flow, flow_feature = modellib.flow_graph(input_image)
+        flow, flow_feature = modellib.flow_graph(input_image, config.FLOW)
         model = KM.Model(input_image, [flow, flow_feature], name='flownet')
         return model
     

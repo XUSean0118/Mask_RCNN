@@ -222,52 +222,100 @@ class ImgPreprocessLayer(KE.Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
     
-def flow_graph(input_image):
+def flow_graph(input_image, architecture="flownets"):
+    assert architecture in ["flownets", "flownetS"]
     image = ImgPreprocessLayer(name="preprocessing")(input_image)
-    conv1 = KL.Conv2D(24, (7, 7), strides=(2, 2), padding="same", name='FlowNets_conv1')(image)
-    conv1 = KL.LeakyReLU(alpha=0.1)(conv1)
-    conv2 = KL.Conv2D(48, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv2')(conv1)
-    conv2 = KL.LeakyReLU(alpha=0.1)(conv2)
-    conv3 = KL.Conv2D(96, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv3')(conv2)
-    conv3 = KL.LeakyReLU(alpha=0.1)(conv3)
-    conv3_1 = KL.Conv2D(96, (3, 3), padding="same", name='FlowNets_conv3_1')(conv3)
-    conv3_1 = KL.LeakyReLU(alpha=0.1)(conv3_1)
-    conv4 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv4')(conv3_1)
-    conv4 = KL.LeakyReLU(alpha=0.1)(conv4)
-    conv4_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv4_1')(conv4)
-    conv4_1 = KL.LeakyReLU(alpha=0.1)(conv4_1)
-    conv5 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv5')(conv4_1)
-    conv5 = KL.LeakyReLU(alpha=0.1)(conv5)
-    conv5_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv5_1')(conv5)
-    conv5_1 = KL.LeakyReLU(alpha=0.1)(conv5_1)
-    conv6 = KL.Conv2D(384, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv6')(conv5_1)
-    conv6 = KL.LeakyReLU(alpha=0.1)(conv6)
-    conv6_1 = KL.Conv2D(384, (3, 3), padding="same", name='FlowNets_conv6_1')(conv6)
-    conv6_1 = KL.LeakyReLU(alpha=0.1)(conv6_1)
-    
-    """ START: Refinement Network """
-    predict_flow6 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow6')(conv6_1)
-    deconv5 = KL.Conv2DTranspose(192, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv5')(conv6_1)
-    deconv5 = KL.LeakyReLU(alpha=0.1)(deconv5)
-    upsample_flow6to5 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow6to5')(predict_flow6)
-    concat5 = KL.Concatenate(axis=3)([conv5_1, deconv5, upsample_flow6to5])
-    predict_flow5 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow5')(concat5)
-    deconv4 = KL.Conv2DTranspose(96, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv4')(concat5)
-    deconv4 = KL.LeakyReLU(alpha=0.1)(deconv4)
-    upsample_flow5to4 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow5to4')(predict_flow5)
-    concat4 = KL.Concatenate(axis=3)([conv4_1, deconv4, upsample_flow5to4])
-    predict_flow4 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow4')(concat4)
-    deconv3 = KL.Conv2DTranspose(48, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv3')(concat4)
-    deconv3 = KL.LeakyReLU(alpha=0.1)(deconv3)
-    upsample_flow4to3 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow4to3')(predict_flow4)
-    concat3 = KL.Concatenate(axis=3)([conv3_1, deconv3, upsample_flow4to3])
-    predict_flow3 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow3')(concat3)
-    deconv2 = KL.Conv2DTranspose(24, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv2')(concat3)
-    deconv2 = KL.LeakyReLU(alpha=0.1)(deconv2)
-    upsample_flow3to2 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow3to2')(predict_flow3)
-    concat2 = KL.Concatenate(axis=3)([conv2, deconv2, upsample_flow3to2])
-    predict_flow2 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow2')(concat2)
+    if architecture == "flownets":
+        conv1 = KL.Conv2D(24, (7, 7), strides=(2, 2), padding="same", name='FlowNets_conv1')(image)
+        conv1 = KL.LeakyReLU(alpha=0.1)(conv1)
+        conv2 = KL.Conv2D(48, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv2')(conv1)
+        conv2 = KL.LeakyReLU(alpha=0.1)(conv2)
+        conv3 = KL.Conv2D(96, (5, 5), strides=(2, 2), padding="same", name='FlowNets_conv3')(conv2)
+        conv3 = KL.LeakyReLU(alpha=0.1)(conv3)
+        conv3_1 = KL.Conv2D(96, (3, 3), padding="same", name='FlowNets_conv3_1')(conv3)
+        conv3_1 = KL.LeakyReLU(alpha=0.1)(conv3_1)
+        conv4 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv4')(conv3_1)
+        conv4 = KL.LeakyReLU(alpha=0.1)(conv4)
+        conv4_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv4_1')(conv4)
+        conv4_1 = KL.LeakyReLU(alpha=0.1)(conv4_1)
+        conv5 = KL.Conv2D(192, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv5')(conv4_1)
+        conv5 = KL.LeakyReLU(alpha=0.1)(conv5)
+        conv5_1 = KL.Conv2D(192, (3, 3), padding="same", name='FlowNets_conv5_1')(conv5)
+        conv5_1 = KL.LeakyReLU(alpha=0.1)(conv5_1)
+        conv6 = KL.Conv2D(384, (3, 3), strides=(2, 2), padding="same", name='FlowNets_conv6')(conv5_1)
+        conv6 = KL.LeakyReLU(alpha=0.1)(conv6)
+        conv6_1 = KL.Conv2D(384, (3, 3), padding="same", name='FlowNets_conv6_1')(conv6)
+        conv6_1 = KL.LeakyReLU(alpha=0.1)(conv6_1)
 
+        """ START: Refinement Network """
+        predict_flow6 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow6')(conv6_1)
+        deconv5 = KL.Conv2DTranspose(192, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv5')(conv6_1)
+        deconv5 = KL.LeakyReLU(alpha=0.1)(deconv5)
+        upsample_flow6to5 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow6to5')(predict_flow6)
+        concat5 = KL.Concatenate(axis=3)([conv5_1, deconv5, upsample_flow6to5])
+        predict_flow5 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow5')(concat5)
+        deconv4 = KL.Conv2DTranspose(96, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv4')(concat5)
+        deconv4 = KL.LeakyReLU(alpha=0.1)(deconv4)
+        upsample_flow5to4 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow5to4')(predict_flow5)
+        concat4 = KL.Concatenate(axis=3)([conv4_1, deconv4, upsample_flow5to4])
+        predict_flow4 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow4')(concat4)
+        deconv3 = KL.Conv2DTranspose(48, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv3')(concat4)
+        deconv3 = KL.LeakyReLU(alpha=0.1)(deconv3)
+        upsample_flow4to3 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow4to3')(predict_flow4)
+        concat3 = KL.Concatenate(axis=3)([conv3_1, deconv3, upsample_flow4to3])
+        predict_flow3 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow3')(concat3)
+        deconv2 = KL.Conv2DTranspose(24, (4, 4), strides=(2, 2), padding="same", name='FlowNets_deconv2')(concat3)
+        deconv2 = KL.LeakyReLU(alpha=0.1)(deconv2)
+        upsample_flow3to2 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNets_upsample_flow3to2')(predict_flow3)
+        concat2 = KL.Concatenate(axis=3)([conv2, deconv2, upsample_flow3to2])
+        predict_flow2 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNets_predict_flow2')(concat2)
+        
+    else:
+        conv1 = KL.Conv2D(64, (7, 7), strides=(2, 2), padding="same", name='FlowNetS_conv1')(image)
+        conv1 = KL.LeakyReLU(alpha=0.1)(conv1)
+        conv2 = KL.Conv2D(128, (5, 5), strides=(2, 2), padding="same", name='FlowNetS_conv2')(conv1)
+        conv2 = KL.LeakyReLU(alpha=0.1)(conv2)
+        conv3 = KL.Conv2D(256, (5, 5), strides=(2, 2), padding="same", name='FlowNetS_conv3')(conv2)
+        conv3 = KL.LeakyReLU(alpha=0.1)(conv3)
+        conv3_1 = KL.Conv2D(256, (3, 3), padding="same", name='FlowNetS_conv3_1')(conv3)
+        conv3_1 = KL.LeakyReLU(alpha=0.1)(conv3_1)
+        conv4 = KL.Conv2D(512, (3, 3), strides=(2, 2), padding="same", name='FlowNetS_conv4')(conv3_1)
+        conv4 = KL.LeakyReLU(alpha=0.1)(conv4)
+        conv4_1 = KL.Conv2D(512, (3, 3), padding="same", name='FlowNetS_conv4_1')(conv4)
+        conv4_1 = KL.LeakyReLU(alpha=0.1)(conv4_1)
+        conv5 = KL.Conv2D(512, (3, 3), strides=(2, 2), padding="same", name='FlowNetS_conv5')(conv4_1)
+        conv5 = KL.LeakyReLU(alpha=0.1)(conv5)
+        conv5_1 = KL.Conv2D(512, (3, 3), padding="same", name='FlowNetS_conv5_1')(conv5)
+        conv5_1 = KL.LeakyReLU(alpha=0.1)(conv5_1)
+        conv6 = KL.Conv2D(1024, (3, 3), strides=(2, 2), padding="same", name='FlowNetS_conv6')(conv5_1)
+        conv6 = KL.LeakyReLU(alpha=0.1)(conv6)
+        conv6_1 = KL.Conv2D(1024, (3, 3), padding="same", name='FlowNetS_conv6_1')(conv6)
+        conv6_1 = KL.LeakyReLU(alpha=0.1)(conv6_1)
+
+        """ START: Refinement Network """
+        predict_flow6 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNetS_predict_flow6')(conv6_1)
+        deconv5 = KL.Conv2DTranspose(512, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_deconv5')(conv6_1)
+        deconv5 = KL.LeakyReLU(alpha=0.1)(deconv5)
+        upsample_flow6to5 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_upsample_flow6to5')(predict_flow6)
+        concat5 = KL.Concatenate(axis=3)([conv5_1, deconv5, upsample_flow6to5])
+        predict_flow5 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNetS_predict_flow5')(concat5)
+        deconv4 = KL.Conv2DTranspose(256, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_deconv4')(concat5)
+        deconv4 = KL.LeakyReLU(alpha=0.1)(deconv4)
+        upsample_flow5to4 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_upsample_flow5to4')(predict_flow5)
+        concat4 = KL.Concatenate(axis=3)([conv4_1, deconv4, upsample_flow5to4])
+        predict_flow4 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNetS_predict_flow4')(concat4)
+        deconv3 = KL.Conv2DTranspose(128, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_deconv3')(concat4)
+        deconv3 = KL.LeakyReLU(alpha=0.1)(deconv3)
+        upsample_flow4to3 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_upsample_flow4to3')(predict_flow4)
+        concat3 = KL.Concatenate(axis=3)([conv3_1, deconv3, upsample_flow4to3])
+        predict_flow3 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNetS_predict_flow3')(concat3)
+        deconv2 = KL.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_deconv2')(concat3)
+        deconv2 = KL.LeakyReLU(alpha=0.1)(deconv2)
+        upsample_flow3to2 = KL.Conv2DTranspose(2, (4, 4), strides=(2, 2), padding="same", name='FlowNetS_upsample_flow3to2')(predict_flow3)
+        concat2 = KL.Concatenate(axis=3)([conv2, deconv2, upsample_flow3to2])
+        predict_flow2 = KL.Conv2D(2, (3, 3), padding="same", name='FlowNetS_predict_flow2')(concat2)
+    
+    
     """ Scale field """
     #scale = KL.Conv2D(256, (3, 3), (1, 1), padding="same", kernel_initializer='zeros', bias_initializer='ones', name='FlowNets/predict_scale')(concat2)
     
@@ -1353,7 +1401,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     """
     # Load image and mask
     image = dataset.load_image(image_id)
-    if not config.Flow:
+    if not config.FLOW:
         image = image[:,:,:3]
     mask, class_ids = dataset.load_mask(image_id)
     original_shape = image.shape
@@ -1986,7 +2034,7 @@ class MaskRCNN():
                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
 
         # Inputs
-        if config.Flow:
+        if config.FLOW:
             input_image = KL.Input(shape=[None, None, 6], name="input_image")
         else:
             input_image = KL.Input(shape=[None, None, 3], name="input_image")
@@ -2030,7 +2078,7 @@ class MaskRCNN():
         # Bottom-up Layers
         # Returns a list of the last layers of each stage, 5 in total.
         # Don't create the thead (stage 5), so we pick the 4th item in the list.
-        if config.Flow:
+        if config.FLOW:
             key_image = KL.Lambda(lambda x: x[:,:,:,3:])(input_image)
             _, C2, C3, C4, C5 = resnet_graph(key_image, config.BACKBONE,
                                          stage5=True, train_bn=config.TRAIN_BN)
@@ -2038,9 +2086,9 @@ class MaskRCNN():
             _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
                                          stage5=True, train_bn=config.TRAIN_BN)
         """
-        if config.Flow:
+        if config.FLOW:
             backbone_shapes = compute_backbone_shapes(config, config.IMAGE_SHAPE)
-            flow, flow_feature = flow_graph(input_image)
+            flow, flow_feature = flow_graph(input_image, config.FLOW)
             C5 = WarpingLayer(backbone_shapes[3], config.BACKBONE_STRIDES[3], depth = 2048, config=config, name="flow_c5")([C5, flow])
             C4 = WarpingLayer(backbone_shapes[2], config.BACKBONE_STRIDES[2], depth = 1024, config=config, name="flow_c4")([C4, flow])
             C3 = WarpingLayer(backbone_shapes[1], config.BACKBONE_STRIDES[1], depth = 512 , config=config, name="flow_c3")([C3, flow])
@@ -2068,9 +2116,9 @@ class MaskRCNN():
         # subsampling from P5 with stride of 2.
         P6 = KL.MaxPooling2D(pool_size=(2, 2), strides=2, name="fpn_p6")(P5)
 
-        if config.Flow:
+        if config.FLOW:
             backbone_shapes = compute_backbone_shapes(config, config.IMAGE_SHAPE)
-            flow, flow_feature = flow_graph(input_image)
+            flow, flow_feature = flow_graph(input_image, config.FLOW)
             P6 = WarpingLayer(backbone_shapes[4], config.BACKBONE_STRIDES[4], config=config, name="flow_p6")([P6, flow])
             P5 = WarpingLayer(backbone_shapes[3], config.BACKBONE_STRIDES[3], config=config, name="flow_p5")([P5, flow])
             P4 = WarpingLayer(backbone_shapes[2], config.BACKBONE_STRIDES[2], config=config, name="flow_p4")([P4, flow])
@@ -2332,7 +2380,7 @@ class MaskRCNN():
         metrics. Then calls the Keras compile() function.
         """
         # Optimizer object
-        if self.config.Flow:
+        if self.config.FLOW:
             optimizer = keras.optimizers.Adam(lr=learning_rate, clipnorm=self.config.GRADIENT_CLIP_NORM)
         else:
             optimizer = keras.optimizers.SGD(lr=learning_rate, momentum=momentum, clipnorm=self.config.GRADIENT_CLIP_NORM)
@@ -2961,7 +3009,7 @@ def mold_image(images, config):
     the mean pixel and converts it to float. Expects image
     colors in RGB order.
     """
-    if config.Flow:
+    if config.FLOW:
         return images.astype(np.float32) - np.tile(config.MEAN_PIXEL, 2)
     else:
         return images.astype(np.float32) - config.MEAN_PIXEL
@@ -2969,7 +3017,7 @@ def mold_image(images, config):
 
 def unmold_image(normalized_images, config):
     """Takes a image normalized with mold() and returns the original."""
-    if config.Flow:
+    if config.FLOW:
         return (normalized_images + np.tile(config.MEAN_PIXEL, 2)).astype(np.uint8)
     else:
         return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
