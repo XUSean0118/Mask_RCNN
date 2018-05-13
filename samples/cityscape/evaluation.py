@@ -59,7 +59,7 @@ def main():
     flownet = FlowNet(config=config)
     maskrcnn = MaskRCNN(config=config)
     warp = Warp(config=config)
-    decision = Decision()
+    decision = Decision(config=config)
 
     model_path = ""
     resnet.load_weights(model_path, by_name=True)

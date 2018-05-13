@@ -513,15 +513,19 @@ class MaskRCNN(Models):
         return self._anchor_cache[tuple(image_shape)]
     
 class Decision(Models):
-    def __init__(self, dropout=0.0):
+    def __init__(self, config, dropout=0.0):
         """
         config: A Sub-class of the Config class
         """
-        self.keras_model = self.build(dropout=dropout)
+        self.config = config
+        self.keras_model = self.build(config=config, dropout=dropout)
         
-    def build(self, dropout):
+    def build(self, config, dropout):
         # Inputs
-        input_feature = KL.Input(shape=[16, 16, 384], name="input_feature")
+        if config.FLOW == "flownets":
+            input_feature = KL.Input(shape=[16, 16, 384], name="input_feature")
+        else:
+            input_feature = KL.Input(shape=[16, 16, 1024], name="input_feature")
         
         conv1 = KL.Conv2D(384, (3, 3), strides=2, padding='SAME', name='decision_conv1')(input_feature)
         conv2 = KL.Conv2D(96, (1, 1), strides=1, padding='SAME', name='decision_conv2')(conv1)
