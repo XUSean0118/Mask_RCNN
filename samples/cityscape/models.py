@@ -381,7 +381,7 @@ class MaskRCNN(Models):
                              name='mask_rcnn')
         return model
     
-    def detect_molded(self, inputs, verbose=0):
+    def detect_molded(self, inputs, window=None):
         """Runs the detection pipeline, but expect inputs that are
         molded already. Used mostly for debugging and inspecting
         the model.
@@ -412,7 +412,8 @@ class MaskRCNN(Models):
             self.keras_model.predict(inputs, verbose=0)
         
         # Process detections
-        window = [0, 0, image_shape[0], image_shape[1]]
+        if not np.any(window):
+            window = [0, 0, image_shape[0], image_shape[1]]
         final_rois, final_class_ids, final_scores, final_masks =\
             self.unmold_detections(detections[0], mrcnn_mask[0],
                                    image_shape, image_shape,
